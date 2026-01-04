@@ -3,6 +3,14 @@ version: "3.9"
 services:
   cve-run-once:
     build: .
+    user: "65534:65534"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       TOKEN: ${TOKEN}
       RECENT_WINDOW_HOURS: ${RECENT_WINDOW_HOURS:-24}
@@ -18,6 +26,14 @@ services:
 
   cve-bot:
     build: .
+    user: "65534:65534"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       TOKEN: ${TOKEN}
       RECENT_WINDOW_HOURS: ${RECENT_WINDOW_HOURS:-24}
