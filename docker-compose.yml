@@ -3,7 +3,7 @@ version: "3.9"
 services:
   cve-run-once:
     build: .
-    user: "65534:65534"
+    user: "1000:1000"
     cap_drop:
       - ALL
     security_opt:
@@ -26,7 +26,7 @@ services:
 
   cve-bot:
     build: .
-    user: "65534:65534"
+    user: "1000:1000"
     cap_drop:
       - ALL
     security_opt:
