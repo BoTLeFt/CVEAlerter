@@ -1,6 +1,30 @@
 version: "3.9"
 
 services:
+  cve-run-once:
+    profiles: ["cron"]
+    build: .
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      TOKEN: ${TOKEN}
+      RECENT_WINDOW_HOURS: ${RECENT_WINDOW_HOURS:-24}
+      CRITICAL_THRESHOLD: ${CRITICAL_THRESHOLD:-8.5}
+      ALERT_THRESHOLD: ${ALERT_THRESHOLD:-9.0}
+      SIREN_THRESHOLD: ${SIREN_THRESHOLD:-9.5}
+      RSS_URL: ${RSS_URL:-https://cvefeed.io/rssfeed/severity/high.xml}
+      SUBSCRIBERS_FILE: /data/subscribers.json
+    command: ["python", "main.py", "--mode", "run-once"]
+    volumes:
+      - ./data:/data
+    restart: "no"
+
   cve-bot:
     build: .
     user: "1000:1000"
