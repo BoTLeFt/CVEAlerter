@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  cve-run-once:
+    build: .
+    environment:
+      TOKEN: ${TOKEN}
+      RECENT_WINDOW_HOURS: ${RECENT_WINDOW_HOURS:-24}
+      CRITICAL_THRESHOLD: ${CRITICAL_THRESHOLD:-8.5}
+      ALERT_THRESHOLD: ${ALERT_THRESHOLD:-9.0}
+      SIREN_THRESHOLD: ${SIREN_THRESHOLD:-9.5}
+      RSS_URL: ${RSS_URL:-https://cvefeed.io/rssfeed/severity/high.xml}
+      SUBSCRIBERS_FILE: /data/subscribers.json
+    command: ["python", "main.py", "--mode", "run-once"]
+    volumes:
+      - ./data:/data
+    restart: "no"
+
+  cve-bot:
+    build: .
+    environment:
+      TOKEN: ${TOKEN}
+      RECENT_WINDOW_HOURS: ${RECENT_WINDOW_HOURS:-24}
+      CRITICAL_THRESHOLD: ${CRITICAL_THRESHOLD:-8.5}
+      ALERT_THRESHOLD: ${ALERT_THRESHOLD:-9.0}
+      SIREN_THRESHOLD: ${SIREN_THRESHOLD:-9.5}
+      RSS_URL: ${RSS_URL:-https://cvefeed.io/rssfeed/severity/high.xml}
+      SUBSCRIBERS_FILE: /data/subscribers.json
+    command: ["python", "main.py", "--mode", "bot"]
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
