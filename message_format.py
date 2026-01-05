@@ -7,11 +7,11 @@ from cve_feed import (
     CveItem,
     clean_html,
     cvss_to_float,
-    extract_circl_affected_products,
-    extract_circl_cwe,
-    extract_circl_cvss,
-    extract_circl_references,
-    extract_circl_summary,
+    extract_affected_products,
+    extract_cwe,
+    extract_cvss,
+    extract_references,
+    extract_summary,
     extract_cve_id,
     get_circl_details,
     get_item_cvss,
@@ -35,15 +35,24 @@ def render_message(item: CveItem, circl_cache: dict, index: int, total: int) -> 
     fields = parse_fields(description_clean)
     cve_id = fields["cve_id"] or extract_cve_id(item.title)
     details = get_circl_details(cve_id, circl_cache)
-    cvss = extract_circl_cvss(details) or fields["cvss_score"]
+    cvss = extract_cvss(details) or fields["cvss_score"]
     cvss_value = cvss_to_float(cvss)
-    summary = extract_circl_summary(details) or fields["description"] or "N/A"
-    cwe = extract_circl_cwe(details)
-    published = details.get("Published") or details.get("cveMetadata", {}).get(
-        "datePublished"
-    )
-    references = extract_circl_references(details)
-    affected_products = extract_circl_affected_products(details)
+    summary = extract_summary(details) or fields["description"] or "N/A"
+    cwe = extract_cwe(details)
+    # Get published date from merged data
+    published = details.get("_published")
+    if not published:
+        # Fallback to old format for backward compatibility
+        published = (
+            details.get("Published") 
+            or details.get("cveMetadata", {}).get("datePublished")
+            or details.get("published")
+        )
+    references = extract_references(details)
+    affected_products = extract_affected_products(details)
+    
+    # Add sources info if available
+    sources_list = details.get("_sources_list", [])
 
     if cvss_value is not None and cvss_value > SIREN_THRESHOLD:
         alert = " 🚨🚨🚨"
@@ -75,6 +84,10 @@ def render_message(item: CveItem, circl_cache: dict, index: int, total: int) -> 
         lines.append("<b>Affected Products</b>:")
         for product in affected_products[:10]:
             lines.append(f"• {html.escape(product)}")
+    # Add sources info if multiple sources were used
+    if sources_list and len(sources_list) > 1:
+        sources_str = ", ".join(sources_list).upper()
+        lines.append(f"<i>Sources: {html.escape(sources_str)}</i>")
     return "\n".join(lines).strip()
 
 
