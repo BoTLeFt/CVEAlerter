@@ -1,1 +1,1 @@
-# Standard library only; no external dependencies required.
+psycopg[binary]==3.2.1

@@ -1,34 +1,13 @@
-import json
-
-from config import SUBSCRIBERS_FILE
+from db import add_subscription, get_last_update_id, remove_subscription, set_last_update_id
 from telegram_client import get_updates, send_message
 
 
-def load_subscribers_state() -> dict:
-    try:
-        with open(SUBSCRIBERS_FILE, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"subscribers": [], "last_update_id": None}
-    if not isinstance(data, dict):
-        return {"subscribers": [], "last_update_id": None}
-    data.setdefault("subscribers", [])
-    data.setdefault("last_update_id", None)
-    return data
-
-
-def save_subscribers_state(state: dict) -> None:
-    with open(SUBSCRIBERS_FILE, "w", encoding="utf-8") as handle:
-        json.dump(state, handle, indent=2)
-
-
-def update_subscribers(token: str, state: dict, timeout: int = 0) -> dict:
-    offset = state.get("last_update_id")
+def update_subscribers(token: str, conn, timeout: int = 0) -> None:
+    offset = get_last_update_id(conn)
     if offset is not None:
         offset = int(offset) + 1
     updates = get_updates(token, offset=offset, timeout=timeout)
-    subscribers = set(state.get("subscribers", []))
-    last_update_id = state.get("last_update_id")
+    last_update_id = get_last_update_id(conn)
     for update in updates:
         update_id = update.get("update_id")
         if update_id is not None:
@@ -40,20 +19,31 @@ def update_subscribers(token: str, state: dict, timeout: int = 0) -> dict:
         if chat_id is None:
             continue
         if text == "/subscribe":
-            subscribers.add(chat_id)
+            add_subscription(conn, chat_id, "default")
             send_message(
                 token,
                 chat_id,
-                "Subscribed. You'll receive critical CVEs once per day.",
+                "Subscribed (default). You'll receive daily critical CVEs.",
             )
         elif text == "/unsubscribe":
-            if chat_id in subscribers:
-                subscribers.remove(chat_id)
+            remove_subscription(conn, chat_id, "default")
             send_message(
                 token,
                 chat_id,
-                "Unsubscribed. You will no longer receive updates.",
+                "Unsubscribed from default updates.",
             )
-    state["subscribers"] = sorted(subscribers)
-    state["last_update_id"] = last_update_id
-    return state
+        elif text == "/subscribe-experimental":
+            add_subscription(conn, chat_id, "experimental")
+            send_message(
+                token,
+                chat_id,
+                "Subscribed (experimental). You'll receive new CVEs every 15 minutes.",
+            )
+        elif text == "/unsubscribe-experimental":
+            remove_subscription(conn, chat_id, "experimental")
+            send_message(
+                token,
+                chat_id,
+                "Unsubscribed from experimental updates.",
+            )
+    set_last_update_id(conn, last_update_id)

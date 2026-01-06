@@ -7,14 +7,18 @@ from cve_feed import (
     CveItem,
     clean_html,
     cvss_to_float,
-    extract_affected_products,
-    extract_cwe,
-    extract_cvss,
-    extract_references,
-    extract_summary,
+    extract_circl_affected_products,
+    extract_circl_cwe,
+    extract_circl_references,
+    extract_circl_summary,
     extract_cve_id,
-    get_circl_details,
-    get_item_cvss,
+    extract_cveorg_cwe,
+    extract_cveorg_references,
+    extract_cveorg_summary,
+    extract_nvd_cwe,
+    extract_nvd_references,
+    extract_nvd_summary,
+    extract_osv_summary,
     parse_fields,
 )
 
@@ -30,30 +34,59 @@ def format_published(value: str) -> str:
     return parsed.strftime("%b %d, %Y %H:%M UTC")
 
 
-def render_message(item: CveItem, circl_cache: dict, index: int, total: int) -> str:
+def pick_summary(sources: dict, rss_fields: dict) -> str:
+    circl = sources.get("circl") or {}
+    nvd = sources.get("nvd") or {}
+    cveorg = sources.get("cveorg") or {}
+    osv = sources.get("osv") or {}
+    return (
+        extract_circl_summary(circl)
+        or extract_nvd_summary(nvd)
+        or extract_cveorg_summary(cveorg)
+        or extract_osv_summary(osv)
+        or rss_fields.get("description")
+        or "N/A"
+    )
+
+
+def pick_cwe(sources: dict) -> str:
+    circl = sources.get("circl") or {}
+    nvd = sources.get("nvd") or {}
+    cveorg = sources.get("cveorg") or {}
+    return extract_circl_cwe(circl) or extract_nvd_cwe(nvd) or extract_cveorg_cwe(cveorg)
+
+
+def pick_references(sources: dict) -> List[str]:
+    circl = sources.get("circl") or {}
+    nvd = sources.get("nvd") or {}
+    cveorg = sources.get("cveorg") or {}
+    return (
+        extract_circl_references(circl)
+        or extract_nvd_references(nvd)
+        or extract_cveorg_references(cveorg)
+    )
+
+
+def render_message(
+    item: CveItem,
+    sources: dict,
+    cvss_score: float | None,
+    index: int,
+    total: int,
+) -> str:
     description_clean = clean_html(item.description) if item.description else ""
     fields = parse_fields(description_clean)
     cve_id = fields["cve_id"] or extract_cve_id(item.title)
-    details = get_circl_details(cve_id, circl_cache)
-    cvss = extract_cvss(details) or fields["cvss_score"]
-    cvss_value = cvss_to_float(cvss)
-    summary = extract_summary(details) or fields["description"] or "N/A"
-    cwe = extract_cwe(details)
-    # Get published date from merged data
-    published = details.get("_published")
-    if not published:
-        # Fallback to old format for backward compatibility
-        published = (
-            details.get("Published") 
-            or details.get("cveMetadata", {}).get("datePublished")
-            or details.get("published")
-        )
-    references = extract_references(details)
-    affected_products = extract_affected_products(details)
-    
-    # Add sources info if available
-    sources_list = details.get("_sources_list", [])
 
+    summary = pick_summary(sources, fields)
+    cwe = pick_cwe(sources)
+    references = pick_references(sources)
+    affected_products = extract_circl_affected_products(sources.get("circl") or {})
+    published = sources.get("circl", {}).get("Published") or sources.get("cveorg", {}).get(
+        "cveMetadata", {}
+    ).get("datePublished")
+
+    cvss_value = cvss_to_float(cvss_score)
     if cvss_value is not None and cvss_value > SIREN_THRESHOLD:
         alert = " 🚨🚨🚨"
     elif cvss_value is not None and cvss_value > ALERT_THRESHOLD:
@@ -68,7 +101,7 @@ def render_message(item: CveItem, circl_cache: dict, index: int, total: int) -> 
         "",
         f"<b>Title</b>: {title}",
         f"<b>URL</b>: <a href=\"{url}\">{url}</a>",
-        f"<b>CVSS Score</b>: {html.escape(str(cvss) if cvss else 'N/A')}{alert}",
+        f"<b>CVSS Score</b>: {html.escape(str(cvss_score) if cvss_score else 'N/A')}{alert}",
         f"<b>Description</b>: {html.escape(summary)}",
     ]
     if cwe:
@@ -84,22 +117,14 @@ def render_message(item: CveItem, circl_cache: dict, index: int, total: int) -> 
         lines.append("<b>Affected Products</b>:")
         for product in affected_products[:10]:
             lines.append(f"• {html.escape(product)}")
-    # Add sources info if multiple sources were used
-    if sources_list and len(sources_list) > 1:
-        sources_str = ", ".join(sources_list).upper()
-        lines.append(f"<i>Sources: {html.escape(sources_str)}</i>")
     return "\n".join(lines).strip()
 
 
-def render_messages(items: Iterable[CveItem], circl_cache: dict) -> List[str]:
-    item_list = list(items)
-    scored_items = [(get_item_cvss(item, circl_cache) or 0.0, item) for item in item_list]
-    scored_items.sort(key=lambda entry: entry[0], reverse=True)
-    item_list = [item for _, item in scored_items]
-    total = len(item_list)
+def render_messages(records: list[dict]) -> List[str]:
+    total = len(records)
     return [
-        render_message(item, circl_cache, index + 1, total)
-        for index, item in enumerate(item_list)
+        render_message(record["item"], record["sources"], record["cvss_score"], index + 1, total)
+        for index, record in enumerate(records)
     ]
 
 
@@ -117,8 +142,10 @@ def split_message(text: str, limit: int) -> List[str]:
     return parts
 
 
-def build_header(count: int) -> str:
+def build_header(count: int, mode: str) -> str:
     report_date = datetime.now(timezone.utc).strftime("%b %d, %Y")
+    if mode == "experimental":
+        return f"<b>{report_date} (UTC)</b>\nNew CVEs (experimental): {count}"
     return (
         f"<b>{report_date} (UTC)</b>\n"
         f"Critical CVEs in last {RECENT_WINDOW_HOURS}h: {count}"

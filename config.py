@@ -9,6 +9,8 @@ CIRCL_URL_TEMPLATE = "https://cve.circl.lu/api/cve/{cve_id}"
 NVD_URL_TEMPLATE = "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
 OSV_URL_TEMPLATE = "https://api.osv.dev/v1/vulns/{cve_id}"
 CVEORG_URL_TEMPLATE = "https://cveawg.mitre.org/api/cve/{cve_id}"
+DATABASE_URL = os.getenv("DATABASE_URL")
+SUBSCRIBERS_FILE = os.getenv("SUBSCRIBERS_FILE", "subscribers.json")
 
 # Priority order for data sources (higher index = higher priority)
 # Data from sources with higher priority will be preferred when merging
@@ -27,4 +29,3 @@ ALERT_THRESHOLD = float(os.getenv("ALERT_THRESHOLD", "9.0"))
 SIREN_THRESHOLD = float(os.getenv("SIREN_THRESHOLD", "9.5"))
 
 TELEGRAM_MAX_LEN = 4096
-SUBSCRIBERS_FILE = os.getenv("SUBSCRIBERS_FILE", "subscribers.json")

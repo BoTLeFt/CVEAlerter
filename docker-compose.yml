@@ -1,6 +1,21 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   cve-run-once:
     profiles: ["cron"]
     build: .
@@ -19,11 +34,41 @@ services:
       ALERT_THRESHOLD: ${ALERT_THRESHOLD:-9.0}
       SIREN_THRESHOLD: ${SIREN_THRESHOLD:-9.5}
       RSS_URL: ${RSS_URL:-https://cvefeed.io/rssfeed/severity/high.xml}
-      SUBSCRIBERS_FILE: /data/subscribers.json
+      DATABASE_URL: ${DATABASE_URL}
     command: ["python", "main.py", "--mode", "run-once"]
     volumes:
       - ./data:/data
     restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cve-ingest:
+    profiles: ["cron-experimental"]
+    build: .
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      TOKEN: ${TOKEN}
+      RECENT_WINDOW_HOURS: ${RECENT_WINDOW_HOURS:-24}
+      CRITICAL_THRESHOLD: ${CRITICAL_THRESHOLD:-8.5}
+      ALERT_THRESHOLD: ${ALERT_THRESHOLD:-9.0}
+      SIREN_THRESHOLD: ${SIREN_THRESHOLD:-9.5}
+      RSS_URL: ${RSS_URL:-https://cvefeed.io/rssfeed/severity/high.xml}
+      DATABASE_URL: ${DATABASE_URL}
+    command: ["python", "main.py", "--mode", "ingest"]
+    volumes:
+      - ./data:/data
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   cve-bot:
     build: .
@@ -42,8 +87,14 @@ services:
       ALERT_THRESHOLD: ${ALERT_THRESHOLD:-9.0}
       SIREN_THRESHOLD: ${SIREN_THRESHOLD:-9.5}
       RSS_URL: ${RSS_URL:-https://cvefeed.io/rssfeed/severity/high.xml}
-      SUBSCRIBERS_FILE: /data/subscribers.json
+      DATABASE_URL: ${DATABASE_URL}
     command: ["python", "main.py", "--mode", "bot"]
     volumes:
       - ./data:/data
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
