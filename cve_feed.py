@@ -164,7 +164,17 @@ def extract_osv_cvss(details: dict) -> Optional[float]:
         return None
     for entry in details.get("severity", []):
         if entry.get("type", "").startswith("CVSS"):
-            return entry.get("score")
+            score = entry.get("score")
+            if isinstance(score, (int, float)):
+                return float(score)
+            if isinstance(score, str):
+                score = score.strip()
+                if "/" in score:
+                    return None
+                try:
+                    return float(score)
+                except ValueError:
+                    return None
     return None
 
 
@@ -192,15 +202,15 @@ def cvss_to_float(value: Optional[object]) -> Optional[float]:
 
 def compute_cvss(sources: dict, rss_fields: dict) -> tuple[Optional[float], str]:
     checks = [
-        ("circl", extract_circl_cvss(sources.get("circl") or {})),
-        ("nvd", extract_nvd_cvss(sources.get("nvd") or {})),
-        ("osv", extract_osv_cvss(sources.get("osv") or {})),
-        ("cveorg", extract_cveorg_cvss(sources.get("cveorg") or {})),
+        ("circl", cvss_to_float(extract_circl_cvss(sources.get("circl") or {}))),
+        ("nvd", cvss_to_float(extract_nvd_cvss(sources.get("nvd") or {}))),
+        ("osv", cvss_to_float(extract_osv_cvss(sources.get("osv") or {}))),
+        ("cveorg", cvss_to_float(extract_cveorg_cvss(sources.get("cveorg") or {}))),
         ("rss", cvss_to_float(rss_fields.get("cvss_score"))),
     ]
     for name, score in checks:
         if score is not None:
-            return float(score), name
+            return score, name
     return None, ""
 
 
