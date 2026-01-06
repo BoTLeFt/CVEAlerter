@@ -37,7 +37,7 @@ def build_rss_raw(item) -> dict:
     }
 
 
-def collect_records(conn, items, send_mode: str, send_only_new: bool) -> list[dict]:
+def collect_records(conn, items, send_mode: str) -> list[dict]:
     records = []
     for item in items:
         description_clean = clean_html(item.description) if item.description else ""
@@ -47,7 +47,6 @@ def collect_records(conn, items, send_mode: str, send_only_new: bool) -> list[di
             continue
 
         status = get_cve_status(conn, cve_id)
-        exists = status is not None
         sent_default_at = status[1] if status else None
         sent_experimental_at = status[2] if status else None
 
@@ -76,12 +75,8 @@ def collect_records(conn, items, send_mode: str, send_only_new: bool) -> list[di
         if send_mode == "default":
             if sent_default_at is not None:
                 continue
-            if send_only_new and exists:
-                continue
         else:
             if sent_experimental_at is not None:
-                continue
-            if send_only_new and exists:
                 continue
 
         records.append(
@@ -124,7 +119,7 @@ def run_ingest(token: str | None) -> int:
         migrate_subscribers_from_file(conn)
         rss_xml = fetch_rss(RSS_URL)
         items = parse_items(rss_xml)
-        records = collect_records(conn, items, send_mode="experimental", send_only_new=True)
+        records = collect_records(conn, items, send_mode="experimental")
 
         if not token:
             print("TOKEN env var is not set; skipping Telegram send.", file=sys.stderr)
@@ -141,7 +136,7 @@ def run_once(token: str | None) -> int:
         rss_xml = fetch_rss(RSS_URL)
         items = parse_items(rss_xml)
         recent_items = filter_recent(items, RECENT_WINDOW)
-        records = collect_records(conn, recent_items, send_mode="default", send_only_new=False)
+        records = collect_records(conn, recent_items, send_mode="default")
 
         if not token:
             print("TOKEN env var is not set; skipping Telegram send.", file=sys.stderr)
