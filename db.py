@@ -147,6 +147,37 @@ def list_subscribers(conn: psycopg.Connection, mode: str) -> list[int]:
     return [row[0] for row in rows]
 
 
+def list_pending_cves(
+    conn: psycopg.Connection, mode: str, threshold: float, cve_ids: list[str]
+) -> list[tuple]:
+    if not cve_ids:
+        return []
+    column = "sent_default_at" if mode == "default" else "sent_experimental_at"
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT
+                cve_id,
+                title,
+                link,
+                description,
+                published_at,
+                circl_raw,
+                nvd_raw,
+                osv_raw,
+                cveorg_raw,
+                cvss_score
+            FROM cves
+            WHERE {column} IS NULL
+              AND cvss_score > %s
+              AND cve_id = ANY(%s)
+            ORDER BY cvss_score DESC NULLS LAST, cve_id
+            """,
+            (threshold, cve_ids),
+        )
+        return cur.fetchall()
+
+
 def add_subscription(conn: psycopg.Connection, chat_id: int, mode: str) -> None:
     with conn.cursor() as cur:
         cur.execute(

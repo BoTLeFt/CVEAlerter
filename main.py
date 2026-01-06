@@ -5,6 +5,7 @@ import time
 
 from config import CRITICAL_THRESHOLD, RECENT_WINDOW, RECENT_WINDOW_HOURS, RSS_URL, TELEGRAM_MAX_LEN
 from cve_feed import (
+    CveItem,
     compute_cvss,
     extract_cve_id,
     fetch_rss,
@@ -17,7 +18,7 @@ from cve_feed import (
 from db import (
     ensure_schema,
     get_conn,
-    get_cve_status,
+    list_pending_cves,
     list_subscribers,
     migrate_subscribers_from_file,
     mark_sent,
@@ -37,18 +38,15 @@ def build_rss_raw(item) -> dict:
     }
 
 
-def collect_records(conn, items, send_mode: str) -> list[dict]:
-    records = []
+def collect_records(conn, items) -> list[str]:
+    cve_ids = set()
     for item in items:
         description_clean = clean_html(item.description) if item.description else ""
         rss_fields = parse_fields(description_clean)
         cve_id = rss_fields["cve_id"] or extract_cve_id(item.title)
         if not cve_id:
             continue
-
-        status = get_cve_status(conn, cve_id)
-        sent_default_at = status[1] if status else None
-        sent_experimental_at = status[2] if status else None
+        cve_ids.add(cve_id)
 
         sources = fetch_sources(cve_id)
         cvss_score, cvss_source = compute_cvss(sources, rss_fields)
@@ -68,22 +66,40 @@ def collect_records(conn, items, send_mode: str) -> list[dict]:
             cvss_score=cvss_score,
             cvss_source=cvss_source,
         )
+    return sorted(cve_ids)
 
-        if cvss_score is None or cvss_score <= CRITICAL_THRESHOLD:
-            continue
 
-        if send_mode == "default":
-            if sent_default_at is not None:
-                continue
-        else:
-            if sent_experimental_at is not None:
-                continue
-
+def build_records_from_db(rows: list[tuple]) -> list[dict]:
+    records = []
+    for row in rows:
+        (
+            cve_id,
+            title,
+            link,
+            description,
+            published_at,
+            circl_raw,
+            nvd_raw,
+            osv_raw,
+            cveorg_raw,
+            cvss_score,
+        ) = row
+        item = CveItem(
+            title=title or "",
+            link=link or "",
+            description=description or "",
+            published_at=published_at,
+        )
         records.append(
             {
                 "cve_id": cve_id,
                 "item": item,
-                "sources": sources,
+                "sources": {
+                    "circl": circl_raw or {},
+                    "nvd": nvd_raw or {},
+                    "osv": osv_raw or {},
+                    "cveorg": cveorg_raw or {},
+                },
                 "cvss_score": cvss_score,
             }
         )
@@ -119,7 +135,9 @@ def run_ingest(token: str | None) -> int:
         migrate_subscribers_from_file(conn)
         rss_xml = fetch_rss(RSS_URL)
         items = parse_items(rss_xml)
-        records = collect_records(conn, items, send_mode="experimental")
+        cve_ids = collect_records(conn, items)
+        rows = list_pending_cves(conn, "experimental", CRITICAL_THRESHOLD, cve_ids)
+        records = build_records_from_db(rows)
 
         if not token:
             print("TOKEN env var is not set; skipping Telegram send.", file=sys.stderr)
@@ -136,7 +154,9 @@ def run_once(token: str | None) -> int:
         rss_xml = fetch_rss(RSS_URL)
         items = parse_items(rss_xml)
         recent_items = filter_recent(items, RECENT_WINDOW)
-        records = collect_records(conn, recent_items, send_mode="default")
+        cve_ids = collect_records(conn, recent_items)
+        rows = list_pending_cves(conn, "default", CRITICAL_THRESHOLD, cve_ids)
+        records = build_records_from_db(rows)
 
         if not token:
             print("TOKEN env var is not set; skipping Telegram send.", file=sys.stderr)
