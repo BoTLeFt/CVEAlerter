@@ -4,6 +4,8 @@ import sys
 import time
 
 from config import CRITICAL_THRESHOLD, RECENT_WINDOW, RECENT_WINDOW_HOURS, RSS_URL, TELEGRAM_MAX_LEN
+from datetime import datetime, timezone
+
 from cve_feed import (
     CveItem,
     compute_cvss,
@@ -18,7 +20,7 @@ from cve_feed import (
 from db import (
     ensure_schema,
     get_conn,
-    list_pending_cves,
+    list_pending_since,
     list_subscribers,
     migrate_subscribers_from_file,
     mark_sent,
@@ -38,15 +40,13 @@ def build_rss_raw(item) -> dict:
     }
 
 
-def collect_records(conn, items) -> list[str]:
-    cve_ids = set()
+def collect_records(conn, items) -> None:
     for item in items:
         description_clean = clean_html(item.description) if item.description else ""
         rss_fields = parse_fields(description_clean)
         cve_id = rss_fields["cve_id"] or extract_cve_id(item.title)
         if not cve_id:
             continue
-        cve_ids.add(cve_id)
 
         sources = fetch_sources(cve_id)
         cvss_score, cvss_source = compute_cvss(sources, rss_fields)
@@ -66,7 +66,6 @@ def collect_records(conn, items) -> list[str]:
             cvss_score=cvss_score,
             cvss_source=cvss_source,
         )
-    return sorted(cve_ids)
 
 
 def build_records_from_db(rows: list[tuple]) -> list[dict]:
@@ -133,10 +132,11 @@ def run_ingest(token: str | None) -> int:
     with get_conn() as conn:
         ensure_schema(conn)
         migrate_subscribers_from_file(conn)
+        run_started = datetime.now(timezone.utc)
         rss_xml = fetch_rss(RSS_URL)
         items = parse_items(rss_xml)
-        cve_ids = collect_records(conn, items)
-        rows = list_pending_cves(conn, "experimental", CRITICAL_THRESHOLD, cve_ids)
+        collect_records(conn, items)
+        rows = list_pending_since(conn, "experimental", CRITICAL_THRESHOLD, run_started)
         records = build_records_from_db(rows)
 
         if not token:
@@ -151,11 +151,12 @@ def run_once(token: str | None) -> int:
     with get_conn() as conn:
         ensure_schema(conn)
         migrate_subscribers_from_file(conn)
+        run_started = datetime.now(timezone.utc)
         rss_xml = fetch_rss(RSS_URL)
         items = parse_items(rss_xml)
         recent_items = filter_recent(items, RECENT_WINDOW)
-        cve_ids = collect_records(conn, recent_items)
-        rows = list_pending_cves(conn, "default", CRITICAL_THRESHOLD, cve_ids)
+        collect_records(conn, recent_items)
+        rows = list_pending_since(conn, "default", CRITICAL_THRESHOLD, run_started)
         records = build_records_from_db(rows)
 
         if not token:

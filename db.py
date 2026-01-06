@@ -147,11 +147,9 @@ def list_subscribers(conn: psycopg.Connection, mode: str) -> list[int]:
     return [row[0] for row in rows]
 
 
-def list_pending_cves(
-    conn: psycopg.Connection, mode: str, threshold: float, cve_ids: list[str]
+def list_pending_since(
+    conn: psycopg.Connection, mode: str, threshold: float, since
 ) -> list[tuple]:
-    if not cve_ids:
-        return []
     column = "sent_default_at" if mode == "default" else "sent_experimental_at"
     with conn.cursor() as cur:
         cur.execute(
@@ -170,10 +168,10 @@ def list_pending_cves(
             FROM cves
             WHERE {column} IS NULL
               AND cvss_score > %s
-              AND cve_id = ANY(%s)
+              AND last_seen_at >= %s
             ORDER BY cvss_score DESC NULLS LAST, cve_id
             """,
-            (threshold, cve_ids),
+            (threshold, since),
         )
         return cur.fetchall()
 
