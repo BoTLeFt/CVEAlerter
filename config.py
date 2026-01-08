@@ -27,5 +27,6 @@ RECENT_WINDOW = timedelta(hours=RECENT_WINDOW_HOURS)
 CRITICAL_THRESHOLD = float(os.getenv("CRITICAL_THRESHOLD", "8.5"))
 ALERT_THRESHOLD = float(os.getenv("ALERT_THRESHOLD", "9.0"))
 SIREN_THRESHOLD = float(os.getenv("SIREN_THRESHOLD", "9.5"))
+MAX_SEND = int(os.getenv("MAX_SEND", "100"))
 
 TELEGRAM_MAX_LEN = 4096

@@ -73,6 +73,7 @@ def render_message(
     cvss_score: float | None,
     index: int,
     total: int,
+    total_available: int,
     mode: str,
 ) -> str:
     description_clean = clean_html(item.description) if item.description else ""
@@ -99,7 +100,10 @@ def render_message(
     url = html.escape(item.link or "N/A")
     if mode == "experimental":
         timestamp = datetime.now(timezone.utc).strftime("%b %d, %Y %H:%M UTC")
-        header = f"<b>{timestamp} | CVE {index}/{total}</b>"
+        if total_available > total:
+            header = f"<b>{timestamp} | CVE {index}/{total} (of {total_available})</b>"
+        else:
+            header = f"<b>{timestamp} | CVE {index}/{total}</b>"
     else:
         header = f"<b>CVE {index}/{total}</b>"
 
@@ -127,7 +131,7 @@ def render_message(
     return "\n".join(lines).strip()
 
 
-def render_messages(records: list[dict], mode: str) -> List[str]:
+def render_messages(records: list[dict], mode: str, total_available: int) -> List[str]:
     total = len(records)
     return [
         render_message(
@@ -136,6 +140,7 @@ def render_messages(records: list[dict], mode: str) -> List[str]:
             record["cvss_score"],
             index + 1,
             total,
+            total_available,
             mode,
         )
         for index, record in enumerate(records)
@@ -156,10 +161,20 @@ def split_message(text: str, limit: int) -> List[str]:
     return parts
 
 
-def build_header(count: int, mode: str) -> str:
+def build_header(count: int, mode: str, total_available: int) -> str:
     report_date = datetime.now(timezone.utc).strftime("%b %d, %Y")
     if mode == "experimental":
+        if total_available > count:
+            return (
+                f"<b>{report_date} (UTC)</b>\n"
+                f"New CVEs (experimental): {count} (of {total_available})"
+            )
         return f"<b>{report_date} (UTC)</b>\nNew CVEs (experimental): {count}"
+    if total_available > count:
+        return (
+            f"<b>{report_date} (UTC)</b>\n"
+            f"Critical CVEs in last {RECENT_WINDOW_HOURS}h: {count} (of {total_available})"
+        )
     return (
         f"<b>{report_date} (UTC)</b>\n"
         f"Critical CVEs in last {RECENT_WINDOW_HOURS}h: {count}"

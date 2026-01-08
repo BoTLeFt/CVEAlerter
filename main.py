@@ -3,7 +3,14 @@ import os
 import sys
 import time
 
-from config import CRITICAL_THRESHOLD, RECENT_WINDOW, RECENT_WINDOW_HOURS, RSS_URL, TELEGRAM_MAX_LEN
+from config import (
+    CRITICAL_THRESHOLD,
+    MAX_SEND,
+    RECENT_WINDOW,
+    RECENT_WINDOW_HOURS,
+    RSS_URL,
+    TELEGRAM_MAX_LEN,
+)
 from datetime import datetime, timezone
 
 from cve_feed import (
@@ -105,7 +112,9 @@ def build_records_from_db(rows: list[tuple]) -> list[dict]:
     return records
 
 
-def dispatch_records(conn, token: str, mode: str, records: list[dict]) -> None:
+def dispatch_records(
+    conn, token: str, mode: str, records: list[dict], total_available: int
+) -> None:
     if not records:
         print("No matching CVEs to send.")
         return
@@ -115,8 +124,8 @@ def dispatch_records(conn, token: str, mode: str, records: list[dict]) -> None:
         print(f"No subscribers found for mode: {mode}.")
         return
 
-    header = build_header(len(records), mode)
-    messages = render_messages(records, mode)
+    header = build_header(len(records), mode, total_available)
+    messages = render_messages(records, mode, total_available)
 
     for chat_id in subscribers:
         if mode == "default":
@@ -137,14 +146,16 @@ def run_ingest(token: str | None) -> int:
         rss_xml = fetch_rss(RSS_URL)
         items = parse_items(rss_xml)
         collect_records(conn, items)
-        rows = list_pending_since(conn, "experimental", CRITICAL_THRESHOLD, run_started)
+        rows, total_available = list_pending_since(
+            conn, "experimental", CRITICAL_THRESHOLD, run_started, MAX_SEND
+        )
         records = build_records_from_db(rows)
 
         if not token:
             print("TOKEN env var is not set; skipping Telegram send.", file=sys.stderr)
             return 0
 
-        dispatch_records(conn, token, "experimental", records)
+        dispatch_records(conn, token, "experimental", records, total_available)
     return 0
 
 
@@ -157,14 +168,16 @@ def run_once(token: str | None) -> int:
         items = parse_items(rss_xml)
         recent_items = filter_recent(items, RECENT_WINDOW)
         collect_records(conn, recent_items)
-        rows = list_pending_since(conn, "default", CRITICAL_THRESHOLD, run_started)
+        rows, total_available = list_pending_since(
+            conn, "default", CRITICAL_THRESHOLD, run_started, MAX_SEND
+        )
         records = build_records_from_db(rows)
 
         if not token:
             print("TOKEN env var is not set; skipping Telegram send.", file=sys.stderr)
             return 0
 
-        dispatch_records(conn, token, "default", records)
+        dispatch_records(conn, token, "default", records, total_available)
     return 0
 
 

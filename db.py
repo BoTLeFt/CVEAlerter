@@ -148,10 +148,21 @@ def list_subscribers(conn: psycopg.Connection, mode: str) -> list[int]:
 
 
 def list_pending_since(
-    conn: psycopg.Connection, mode: str, threshold: float, since
-) -> list[tuple]:
+    conn: psycopg.Connection, mode: str, threshold: float, since, limit: int
+) -> tuple[list[tuple], int]:
     column = "sent_default_at" if mode == "default" else "sent_experimental_at"
     with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM cves
+            WHERE {column} IS NULL
+              AND cvss_score > %s
+              AND last_seen_at >= %s
+            """,
+            (threshold, since),
+        )
+        total_count = cur.fetchone()[0]
         cur.execute(
             f"""
             SELECT
@@ -170,10 +181,11 @@ def list_pending_since(
               AND cvss_score > %s
               AND last_seen_at >= %s
             ORDER BY cvss_score DESC NULLS LAST, cve_id
+            LIMIT %s
             """,
-            (threshold, since),
+            (threshold, since, limit),
         )
-        return cur.fetchall()
+        return cur.fetchall(), total_count
 
 
 def add_subscription(conn: psycopg.Connection, chat_id: int, mode: str) -> None:
