@@ -32,14 +32,14 @@ def update_subscribers(token: str, conn, timeout: int = 0) -> None:
                 chat_id,
                 "Unsubscribed from default updates.",
             )
-        elif text == "/subscribe-experimental":
+        elif text == "/subscribe_experimental":
             add_subscription(conn, chat_id, "experimental")
             send_message(
                 token,
                 chat_id,
                 "Subscribed (experimental). You'll receive new CVEs every 15 minutes.",
             )
-        elif text == "/unsubscribe-experimental":
+        elif text == "/unsubscribe_experimental":
             remove_subscription(conn, chat_id, "experimental")
             send_message(
                 token,

@@ -73,6 +73,7 @@ def render_message(
     cvss_score: float | None,
     index: int,
     total: int,
+    mode: str,
 ) -> str:
     description_clean = clean_html(item.description) if item.description else ""
     fields = parse_fields(description_clean)
@@ -96,8 +97,14 @@ def render_message(
 
     title = html.escape(item.title)
     url = html.escape(item.link or "N/A")
+    if mode == "experimental":
+        timestamp = datetime.now(timezone.utc).strftime("%b %d, %Y %H:%M UTC")
+        header = f"<b>{timestamp} | CVE {index}/{total}</b>"
+    else:
+        header = f"<b>CVE {index}/{total}</b>"
+
     lines = [
-        f"<b>CVE {index}/{total}</b>",
+        header,
         "",
         f"<b>Title</b>: {title}",
         f"<b>URL</b>: <a href=\"{url}\">{url}</a>",
@@ -120,10 +127,17 @@ def render_message(
     return "\n".join(lines).strip()
 
 
-def render_messages(records: list[dict]) -> List[str]:
+def render_messages(records: list[dict], mode: str) -> List[str]:
     total = len(records)
     return [
-        render_message(record["item"], record["sources"], record["cvss_score"], index + 1, total)
+        render_message(
+            record["item"],
+            record["sources"],
+            record["cvss_score"],
+            index + 1,
+            total,
+            mode,
+        )
         for index, record in enumerate(records)
     ]
 

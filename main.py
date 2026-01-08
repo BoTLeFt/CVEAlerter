@@ -116,10 +116,11 @@ def dispatch_records(conn, token: str, mode: str, records: list[dict]) -> None:
         return
 
     header = build_header(len(records), mode)
-    messages = render_messages(records)
+    messages = render_messages(records, mode)
 
     for chat_id in subscribers:
-        send_message(token, chat_id, header)
+        if mode == "default":
+            send_message(token, chat_id, header)
         for message in messages:
             for chunk in split_message(message, TELEGRAM_MAX_LEN):
                 send_message(token, chat_id, chunk)
